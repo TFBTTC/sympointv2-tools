@@ -1,15 +1,20 @@
 # Configuration RunPod pour SymPointV2
 
-## Template Recommandé
+## 🚀 Template Personnalisé (Recommandé)
 
 | Paramètre | Valeur |
 |-----------|--------|
+| **Template** | `sympoint-v2-dev` |
 | **GPU** | RTX 4000 Ada (20GB VRAM) - ~0.26$/h |
-| **Container Image** | `pytorch/pytorch:1.10.0-cuda11.3-cudnn8-devel` |
-| **Container Disk** | 20 GB |
 | **Volume Disk** | 50 GB |
 | **Volume Mount Path** | `/workspace` |
-| **HTTP Ports** | 8888 |
+
+L'image custom `sympoint-v2-dev` inclut déjà :
+- SymPointV2 installé
+- Checkpoint téléchargé
+- pointops compilé
+- sympointv2-tools cloné
+- Toutes les dépendances
 
 ## Variables d'Environnement
 
@@ -18,7 +23,55 @@ JUPYTER_PASSWORD=a
 PUBLIC_KEY=ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDYegPrtRxOmcaIy3dBLMOw5INs1XF60aCQM6EsCRWD7 pierreantoine.bq@gmail.com
 ```
 
-## Container Start Command (COPIER-COLLER)
+## Clé SSH
+
+```
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDYegPrtRxOmcaIy3dBLMOw5INs1XF60aCQM6EsCRWD7 pierreantoine.bq@gmail.com
+```
+
+## Connexion SSH
+
+Après démarrage du pod :
+1. Récupérer l'IP publique et le port SSH depuis la console RunPod
+2. Connexion : `ssh -p <PORT> root@<IP>`
+
+## Premier Usage
+
+```bash
+cd /workspace
+
+# Mettre à jour les scripts depuis GitHub (si modifiés)
+cd sympointv2-tools && git pull && cd ..
+
+# Workflow standard
+python smart_pdf_parser_v2.py test_pdfs/plan.pdf
+python run_inference.py test_pdfs/plan_s2.json
+```
+
+## Avant de Fermer le Pod
+
+**IMPORTANT** : Sauvegarder les modifications !
+
+```bash
+cd /workspace
+./sync_to_github.sh "Description des modifications"
+```
+
+---
+
+## 📦 Alternative : Image de Base
+
+Si le template custom n'est pas disponible, utiliser :
+
+| Paramètre | Valeur |
+|-----------|--------|
+| **Container Image** | `pytorch/pytorch:1.10.0-cuda11.3-cudnn8-devel` |
+| **Container Disk** | 20 GB |
+| **Volume Disk** | 50 GB |
+| **Volume Mount Path** | `/workspace` |
+| **HTTP Ports** | 8888 |
+
+Avec le Container Start Command suivant :
 
 ```bash
 bash -c "cd /workspace && \
@@ -57,37 +110,4 @@ echo 'export LD_LIBRARY_PATH=/opt/conda/lib/python3.7/site-packages/torch/lib:\$
 pip install jupyterlab ipykernel && \
 python -m ipykernel install --user --name python3 --display-name 'Python 3' && \
 jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root --NotebookApp.token='' --NotebookApp.password=''"
-```
-
-## Clé SSH
-
-```
-ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDYegPrtRxOmcaIy3dBLMOw5INs1XF60aCQM6EsCRWD7 pierreantoine.bq@gmail.com
-```
-
-## Connexion SSH
-
-Après démarrage du pod :
-1. Récupérer l'IP publique et le port SSH depuis la console RunPod
-2. Connexion : `ssh -p <PORT> root@<IP>`
-
-## Premier Usage
-
-Une fois connecté au pod :
-
-```bash
-cd /workspace
-
-# Les scripts sont déjà disponibles grâce au start command
-python smart_pdf_parser_v2.py test_pdfs/plan.pdf
-python run_inference.py test_pdfs/plan_s2.json
-```
-
-## Avant de Fermer le Pod
-
-**IMPORTANT** : Sauvegarder les modifications !
-
-```bash
-cd /workspace
-./sync_to_github.sh "Description des modifications"
 ```
