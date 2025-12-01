@@ -9,12 +9,9 @@ AMÉLIORATIONS v5:
 4. Moins de filtrage sur les éléments structurels
 
 Stratégie:
-- width >= 0.4 = MURS (toujours garder, layer 0)
-- width 0.15-0.4 = Éléments moyens (portes, fenêtres, layer 1)
-- width < 0.15 = Détails fins (texte, annotations, layer 2)
-
-Usage:
-    python smart_pdf_parser_v5.py input.pdf [output.json]
+- width >= 0.5 = MURS (toujours garder, layer prioritaire)
+- width 0.2-0.5 = Éléments moyens (portes, fenêtres, mobilier)
+- width < 0.2 = Détails fins (texte, annotations)
 """
 
 import fitz
@@ -60,6 +57,7 @@ def detect_cartouche_zone(page):
     rect = page.rect
     width, height = rect.width, rect.height
     
+    # Zone cartouche plus restrictive
     cartouche = fitz.Rect(
         width * 0.65,
         height * 0.80,
@@ -109,14 +107,17 @@ def parse_pdf(pdf_path, output_path=None, debug=False):
     orig_width, orig_height = page.rect.width, page.rect.height
     print(f"   Dimensions: {orig_width:.0f} x {orig_height:.0f}")
     
+    # Zones à exclure (mais PAS pour les murs)
     text_zones = get_text_zones(page)
     cartouche = detect_cartouche_zone(page)
     exclude_zones = text_zones + ([cartouche] if cartouche else [])
     print(f"   Zones texte: {len(text_zones)}, Cartouche: {cartouche is not None}")
     
+    # Extraire les primitives
     drawings = page.get_drawings()
     print(f"   Paths bruts: {len(drawings)}")
     
+    # Statistiques par épaisseur
     width_stats = defaultdict(int)
     for path in drawings:
         w = path.get('width', 0) or 0
@@ -127,6 +128,7 @@ def parse_pdf(pdf_path, output_path=None, debug=False):
     print(f"   Moyens ({MEDIUM_WIDTH_THRESHOLD} <= width < {WALL_WIDTH_THRESHOLD}): {width_stats['medium']}")
     print(f"   Détails (width < {MEDIUM_WIDTH_THRESHOLD}): {width_stats['detail']}")
     
+    # Collecter les primitives
     all_primitives = []
     stats = {'walls_kept': 0, 'medium_kept': 0, 'detail_kept': 0,
              'excluded_zone': 0, 'excluded_length': 0}
@@ -138,7 +140,7 @@ def parse_pdf(pdf_path, output_path=None, debug=False):
         for item in path['items']:
             cmd_type = item[0]
             
-            if cmd_type == 'l':
+            if cmd_type == 'l':  # Ligne
                 p1, p2 = item[1], item[2]
                 points = [
                     p1.x, p1.y,
@@ -147,15 +149,17 @@ def parse_pdf(pdf_path, output_path=None, debug=False):
                     p2.x, p2.y
                 ]
                 
+                # Pour les MURS: ne PAS exclure même si dans zone texte
                 if element_type == 'wall':
                     all_primitives.append((0, points, path_idx, original_width, 'wall'))
                 else:
+                    # Pour les autres: exclure si dans zone texte/cartouche
                     if is_point_in_zones(p1, exclude_zones) and is_point_in_zones(p2, exclude_zones):
                         stats['excluded_zone'] += 1
                         continue
                     all_primitives.append((0, points, path_idx, original_width, element_type))
                 
-            elif cmd_type == 'c':
+            elif cmd_type == 'c':  # Courbe
                 if len(item) >= 5:
                     p_start = item[1]
                     points = []
@@ -169,7 +173,7 @@ def parse_pdf(pdf_path, output_path=None, debug=False):
                         else:
                             stats['excluded_zone'] += 1
                             
-            elif cmd_type == 're':
+            elif cmd_type == 're':  # Rectangle
                 rect = item[1]
                 center = fitz.Point((rect.x0 + rect.x1)/2, (rect.y0 + rect.y1)/2)
                 
@@ -195,14 +199,17 @@ def parse_pdf(pdf_path, output_path=None, debug=False):
     
     doc.close()
     
+    # Rescaling
     scale = TARGET_SIZE / max(orig_width, orig_height)
     
+    # Filtrage par longueur (seuils différents selon type)
     commands, args, lengths, layerIds, widths_out = [], [], [], [], []
     
     for cmd, points, layer_id, orig_w, elem_type in all_primitives:
         scaled_points = [p * scale for p in points]
         length = calculate_length(scaled_points)
         
+        # Seuil de longueur selon le type
         if elem_type == 'wall':
             min_len = MIN_LENGTH_WALLS
         else:
@@ -212,14 +219,15 @@ def parse_pdf(pdf_path, output_path=None, debug=False):
             commands.append(cmd)
             args.append(scaled_points)
             lengths.append(length)
+            # Layer basé sur le type d'élément
             if elem_type == 'wall':
-                layerIds.append(0)
+                layerIds.append(0)  # Layer 0 = murs
                 stats['walls_kept'] += 1
             elif elem_type == 'medium':
-                layerIds.append(1)
+                layerIds.append(1)  # Layer 1 = éléments moyens
                 stats['medium_kept'] += 1
             else:
-                layerIds.append(2)
+                layerIds.append(2)  # Layer 2 = détails
                 stats['detail_kept'] += 1
             widths_out.append(orig_w * scale)
         else:
@@ -235,11 +243,13 @@ def parse_pdf(pdf_path, output_path=None, debug=False):
         print("⚠️  Aucune primitive!")
         return None
     
+    # Stats finales
     lengths_arr = np.array(lengths)
     print(f"\n📊 Statistiques:")
     print(f"   Dimensions: {int(orig_width * scale)} x {int(orig_height * scale)}")
     print(f"   Lengths: min={lengths_arr.min():.2f}, max={lengths_arr.max():.2f}, mean={lengths_arr.mean():.2f}")
     
+    # JSON
     n = len(commands)
     result = {
         "width": int(orig_width * scale),
@@ -248,7 +258,7 @@ def parse_pdf(pdf_path, output_path=None, debug=False):
         "args": args,
         "lengths": lengths,
         "layerIds": layerIds,
-        "widths": [UNIFORM_WIDTH] * n,
+        "widths": [UNIFORM_WIDTH] * n,  # Uniforme pour le modèle
         "semanticIds": [35] * n,
         "instanceIds": [-1] * n,
         "rgb": [[0, 0, 0]] * n

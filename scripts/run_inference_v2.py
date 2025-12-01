@@ -55,7 +55,16 @@ CLASSES = {
 def remap_walls(predictions, layerIds, num_preds):
     """
     Post-traitement: Remappe Railing/Fence → Wall pour layer 0 (murs épais).
+    
+    Args:
+        predictions: array de prédictions (N,)
+        layerIds: array de layer IDs du fichier source
+        num_preds: nombre de prédictions
+    
+    Returns:
+        predictions corrigées
     """
+    # Pad layerIds si nécessaire
     if len(layerIds) < num_preds:
         padded = np.full(num_preds, layerIds[-1] if len(layerIds) > 0 else 0)
         padded[:len(layerIds)] = layerIds
@@ -63,7 +72,9 @@ def remap_walls(predictions, layerIds, num_preds):
     else:
         layerIds = layerIds[:num_preds]
     
+    # Layer 0 = murs (traits épais dans parser v5)
     wall_layer = (layerIds == 0)
+    # Classes 32=Railing, 33=Fence → 30=Wall
     railing_or_fence = np.isin(predictions, [32, 33])
     to_remap = wall_layer & railing_or_fence
     
@@ -79,6 +90,7 @@ def run_inference(json_path, config_path, checkpoint_path):
     print(f"{'='*60}")
     print(f"Fichier: {json_path}")
     
+    # Charger le fichier source pour layerIds
     with open(json_path) as f:
         source_data = json.load(f)
     layerIds = np.array(source_data.get('layerIds', []))
@@ -114,10 +126,12 @@ def run_inference(json_path, config_path, checkpoint_path):
         result = model(batch, return_loss=False)
     print("✅ Inférence terminée")
     
+    # Prédictions brutes
     sem_scores = result['semantic_scores']
     sem_preds_raw = torch.argmax(sem_scores, dim=1).cpu().numpy()
     instances = result['instances']
     
+    # Post-traitement: remapper les murs
     print("\n🔧 Post-traitement (remapping murs)...")
     sem_preds, n_remapped = remap_walls(sem_preds_raw, layerIds, len(sem_preds_raw))
     print(f"   Remappé {n_remapped} primitives Railing/Fence → Wall")
@@ -134,6 +148,7 @@ def run_inference(json_path, config_path, checkpoint_path):
     
     print(f"\n🎯 Instances détectées: {len(instances)}")
     
+    # Sauvegarder
     output_path = json_path.replace('_s2.json', '_pred.json')
     output = {
         'source_file': os.path.basename(json_path),
