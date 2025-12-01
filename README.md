@@ -1,64 +1,97 @@
-# 🏗️ SymPointV2 Tools
+# SymPointV2 Tools
 
-Outils pour la segmentation de plans d'architecture avec SymPointV2 sur RunPod.
+Outils pour utiliser SymPointV2 (segmentation de plans d'architecture) sur RunPod.
 
 ## 🚀 Quick Start
 
 ```bash
+# Sur RunPod avec template pytorch:1.10.0-cuda11.3
 cd /workspace
 git clone https://github.com/TFBTTC/sympointv2-tools.git
 cd sympointv2-tools
 chmod +x setup.sh && ./setup.sh
 ```
 
+## 📋 Workflow
+
+```bash
+# 1. Parser un PDF
+python scripts/smart_pdf_parser_v3.py mon_plan.pdf
+
+# 2. Lancer l'inférence
+python scripts/run_inference.py mon_plan_s2.json
+```
+
+## ⚠️ Points Critiques
+
+### Format JSON Correct
+
+Le format doit correspondre exactement à FloorPlanCAD:
+
+```json
+{
+  "width": 140,
+  "height": 140,
+  "commands": [0, 0, 1, 0],
+  "args": [
+    [x1, y1, x2, y2, x3, y3, x4, y4],
+    ...
+  ],
+  "lengths": [2.5, 3.1, ...],
+  "widths": [0.1, 0.1, ...],
+  "instanceIds": [-1, -1, ...],
+  "semanticIds": [35, 35, ...],
+  "layerIds": [0, 1, 1, ...],
+  "rgb": [[0,0,0], ...]
+}
+```
+
+### Nettoyage Requis
+
+Supprimer avant parsing:
+- ❌ Textes, annotations, côtes
+- ❌ Cartouche, légendes
+- ❌ Rose des vents, plan situation
+
+Garder:
+- ✅ Murs, cloisons
+- ✅ Portes, fenêtres
+- ✅ Sanitaires, escaliers
+
 ## 📁 Structure
 
 ```
-sympointv2-tools/
-├── setup.sh                    # Installation automatique
-├── sync_to_github.sh           # Sauvegarde vers GitHub
-├── GUIDE_COMPLET.md           # Documentation détaillée
-└── scripts/
-    ├── smart_pdf_parser_v2.py # Parser PDF → JSON
-    ├── run_inference.py       # Inférence SymPointV2
-    └── analyze_pdf_ocg.py     # Analyse structure PDF
+├── scripts/
+│   ├── smart_pdf_parser_v3.py  # Parser PDF optimisé
+│   ├── run_inference.py        # Inférence avec patch
+│   └── analyze_pdf_ocg.py      # Analyse calques OCG
+├── docs/
+│   ├── FORMAT_FIXES.md         # Détail des corrections
+│   └── CLEANING_GUIDE.md       # Guide nettoyage
+├── configs/
+│   └── runpod_template.json    # Config RunPod
+└── setup.sh                    # Installation
 ```
 
-## 🔗 Ressources Google Drive
+## 🔧 Corrections Appliquées (v3)
 
-| Fichier | Lien |
-|---------|------|
-| **best.pth** (135MB) | [Télécharger](https://drive.google.com/file/d/1LczVNXapght3S65gx0ZOhQ3UqkBg4hJ7/view) |
-| **svg_pointT.yaml** | [Télécharger](https://drive.google.com/file/d/1c0_al7p72D7eTOHgBP_kxU1H1Ia-ZakV/view) |
-| **plan_test_ocg.pdf** | [Télécharger](https://drive.google.com/file/d/1zr0khQ34Utjznvxv3HbI4yoJUe-IU5JU/view) |
+1. **Format args**: Liste plate `[x1,y1,x2,y2,...]`
+2. **Rescaling**: Vers ~140x140 (standard FloorPlanCAD)
+3. **Filtrage**: Micro-primitives < 0.5 unité
+4. **Widths**: Uniformes (0.1)
+5. **instanceIds**: -1 (pas 0)
 
-## ⚙️ Configuration RunPod
+## 📊 Résultats Attendus
 
-| Paramètre | Valeur |
-|-----------|--------|
-| Image | `pytorch/pytorch:1.10.0-cuda11.3-cudnn8-devel` |
-| GPU | RTX 4000 Ada (20GB) |
-| Volume | 50 GB sur `/workspace` |
+Avec un plan correctement préparé:
+- Wall, Door, Window détectés
+- ~10-50 instances
+- Scores 0.05-0.20 (style différent de FloorPlanCAD)
 
-## 🔄 Workflow
+Pour de meilleurs résultats: fine-tuning sur vos plans.
 
-```bash
-# Parser un PDF
-python smart_pdf_parser_v2.py mon_plan.pdf
+## 📚 Documentation
 
-# Lancer l'inférence
-python run_inference.py mon_plan_s2.json
-
-# Avant de fermer le pod - sauvegarder les modifs
-./sync_to_github.sh "description"
-```
-
-## 🐛 Problèmes résolus
-
-- ✅ Bug pointops knnquery (patch intégré)
-- ✅ Incompatibilité checkpoint PyTorch
-- ✅ Détection automatique OCG
-
-## 📊 Classes (35)
-
-Portes (1-6), Fenêtres (7-10), Mobilier (11-15), Cuisine (16-19), Sanitaires (20-25), Circulation (26-28), Murs (31-34), Background (35)
+- [Guide Corrections Format](docs/FORMAT_FIXES.md)
+- [Guide Nettoyage Plans](docs/CLEANING_GUIDE.md)
+- [Guide Claude](GUIDE_CLAUDE.md)

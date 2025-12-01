@@ -1,88 +1,69 @@
-# 🤖 Guide pour Claude - SymPointV2
+# Guide Claude - SymPointV2 Tools
 
-## Quand l'utilisateur dit "Lance un pod SymPointV2"
+## Connexion Pod RunPod
 
-### ⚠️ IMPORTANT : Limitation API
-
-L'API MCP RunPod ne permet pas de créer un pod avec un template custom qui inclut un Start Command. 
-
-**Réponse à donner :**
-> Lance le pod manuellement depuis l'interface RunPod avec le template `sympoint-v2-dev`, dis-moi quand c'est prêt et je me connecte en SSH.
-
-### Après que l'utilisateur dit "c'est prêt" / "c'est bon"
-
-1. Récupérer les infos du pod :
-```
+```bash
+# Vérifier les pods actifs
 runpod:list-pods
+
+# Connexion SSH
+ssh root@<IP> -p <PORT>
 ```
 
-2. Se connecter en SSH :
-```
-ssh:remote-ssh
-  - host: <IP publique>
-  - port: <port SSH (souvent 22xxx)>
-  - user: root
-```
+## Setup Rapide (Nouveau Pod)
 
-3. Vérifier l'installation :
 ```bash
+# 1. Cloner les outils
 cd /workspace
-ls -la smart_pdf_parser_v2.py run_inference.py
-python -c "from modules.pointops.functions import pointops; print('OK')"
+git clone https://github.com/TFBTTC/sympointv2-tools.git
+cd sympointv2-tools && chmod +x setup.sh && ./setup.sh
+
+# 2. Ou setup manuel
+cd /workspace/SymPointV2/modules/pointops
+python setup.py install
+export LD_LIBRARY_PATH=/opt/conda/lib/python3.7/site-packages/torch/lib:$LD_LIBRARY_PATH
 ```
 
-## Workflow Standard
+## Workflow Inférence
 
 ```bash
-cd /workspace
+# 1. Parser le PDF (v3 avec corrections)
+python scripts/smart_pdf_parser_v3.py input.pdf --min-length 0.5
 
-# Mettre à jour les scripts (si modifiés sur GitHub)
-cd sympointv2-tools && git pull && cd ..
-
-# Parser un PDF
-python smart_pdf_parser_v2.py test_pdfs/plan.pdf
-
-# Inférence
-python run_inference.py test_pdfs/plan_s2.json
+# 2. Lancer inférence
+python scripts/run_inference.py input_s2.json
 ```
 
-## ⚠️ AVANT FERMETURE DU POD
+## Corrections Format Critiques
 
-**TOUJOURS** demander à l'utilisateur s'il veut sauvegarder les modifications :
+| Champ | Valeur Correcte | Erreur Fréquente |
+|-------|-----------------|------------------|
+| args | `[x1,y1,x2,y2,...]` flat | `[[x1,y1],...]` nested |
+| dimensions | ~140x140 | dimensions PDF originales |
+| widths | `[0.1, 0.1, ...]` uniforme | valeurs variables |
+| instanceIds | `[-1, -1, ...]` | `[0, 0, ...]` |
+| lengths | filtrer < 0.5 | garder tout |
 
-```bash
-./sync_to_github.sh "Description"
-```
+## Statistiques Cibles (FloorPlanCAD)
 
-Puis fermer :
-```
-runpod:stop-pod podId=<ID>
-```
+- Dimensions: ~140x140
+- Primitives: ~900-2000
+- Lengths mean: ~5.4
+- Lengths median: ~2.1
 
 ## Problèmes Connus
 
-| Problème | Solution |
-|----------|----------|
-| Bug knnquery indices invalides | Patch intégré dans `run_inference.py` |
-| Checkpoint PyTorch incompatible | `load_model_weights_custom()` dans le script |
-| `libc10.so` non trouvé | `export LD_LIBRARY_PATH=/opt/conda/lib/python3.7/site-packages/torch/lib:$LD_LIBRARY_PATH` |
+### 100% Background
+1. Vérifier format args (liste plate!)
+2. Vérifier rescaling (~140x140)
+3. Filtrer micro-primitives (textes)
+4. Style graphique différent → fine-tuning requis
 
-## Liens Importants
+### CUDA Error knnquery
+Le patch est dans run_inference.py (torch.clamp sur indices)
 
-- **Repo GitHub** : https://github.com/TFBTTC/sympointv2-tools
-- **Checkpoint best.pth** : https://drive.google.com/file/d/1LczVNXapght3S65gx0ZOhQ3UqkBg4hJ7/view
-- **Config svg_pointT.yaml** : https://drive.google.com/file/d/1c0_al7p72D7eTOHgBP_kxU1H1Ia-ZakV/view
+## Liens Utiles
 
-## Ce que l'API MCP RunPod PEUT faire
-
-✅ `runpod:list-pods` - Lister les pods
-✅ `runpod:get-pod` - Statut d'un pod
-✅ `runpod:stop-pod` - Arrêter un pod
-✅ `runpod:start-pod` - Redémarrer un pod arrêté
-✅ `runpod:delete-pod` - Supprimer un pod
-✅ `runpod:list-templates` - Lister les templates
-
-## Ce que l'API MCP RunPod NE PEUT PAS faire
-
-❌ Créer un pod à partir d'un template avec Start Command custom
-❌ Récupérer le Start Command d'un template
+- Repo outils: https://github.com/TFBTTC/sympointv2-tools
+- SymPointV2 original: https://github.com/nicehuster/SymPointV2
+- FloorPlanCAD dataset: https://floorplancad.github.io/
