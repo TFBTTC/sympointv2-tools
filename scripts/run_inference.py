@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 """
 run_inference.py - Inférence SymPointV2 avec patch knnquery
+
+CORRECTION IMPORTANTE: utiliser argmax(semantic_scores) pour les prédictions,
+PAS semantic_labels qui contient les ground truth du fichier d'entrée.
 """
 
 import os
@@ -38,32 +41,16 @@ from svgnet.model.svgnet import SVGNet as svgnet
 from svgnet.data.svg3 import SVGDataset
 
 CLASSES = {
-    1: "Single Door", 2: "Double Door", 3: "Sliding Door",
-    4: "Folding Door", 5: "Revolving Door", 6: "Rolling Door",
-    7: "Window", 8: "Bay Window", 9: "Blind Window", 10: "Opening Symbol",
-    11: "Sofa", 12: "Bed", 13: "Chair", 14: "Table", 15: "TV Cabinet",
-    16: "Gas Stove", 17: "Sink", 18: "Refrigerator", 19: "AirCon",
-    20: "Bath", 21: "Bathtub", 22: "Washing Machine", 23: "Squat Toilet", 24: "Urinal",
-    25: "Toilet", 26: "Stairs", 27: "Elevator",
-    28: "Escalator", 29: "Row Chairs", 30: "Parking Spot",
-    31: "Wall", 32: "Curtain Wall", 33: "Railing",
-    34: "Fence", 35: "Background"
+    0: "Single Door", 1: "Double Door", 2: "Sliding Door",
+    3: "Folding Door", 4: "Revolving Door", 5: "Rolling Door",
+    6: "Window", 7: "Bay Window", 8: "Blind Window", 9: "Opening Symbol",
+    10: "Sofa", 11: "Bed", 12: "Chair", 13: "Table", 14: "TV Cabinet",
+    15: "Gas Stove", 16: "Sink", 17: "Refrigerator", 18: "AirCon",
+    19: "Bath", 20: "Bathtub", 21: "Washing Machine", 22: "Squat Toilet",
+    23: "Urinal", 24: "Toilet", 25: "Stairs", 26: "Elevator",
+    27: "Escalator", 28: "Row Chairs", 29: "Parking Spot",
+    30: "Wall", 31: "Curtain Wall", 32: "Railing", 33: "Fence", 34: "Background"
 }
-
-
-def load_model_weights_custom(model, checkpoint_path):
-    print(f"📦 Chargement: {checkpoint_path}")
-    state_dict = torch.load(checkpoint_path, map_location='cpu')
-    
-    src = state_dict.get('net', state_dict)
-    epoch = state_dict.get('epoch', '?')
-    print(f"   Epoch: {epoch}")
-    
-    model_dict = model.state_dict()
-    filtered = {k: v for k, v in src.items() if k in model_dict and v.shape == model_dict[k].shape}
-    model.load_state_dict(filtered, strict=False)
-    print(f"   ✅ Chargé: {len(filtered)}/{len(src)} paramètres")
-    return model
 
 
 def run_inference(json_path, config_path, checkpoint_path):
@@ -76,16 +63,16 @@ def run_inference(json_path, config_path, checkpoint_path):
     
     print("\n📦 Construction du modèle...")
     model = svgnet(cfg.model).cuda()
-    model = load_model_weights_custom(model, checkpoint_path)
+    
+    state = torch.load(checkpoint_path, map_location='cpu')
+    model.load_state_dict({k: v for k, v in state['net'].items() 
+                          if k in model.state_dict()}, strict=False)
     model.eval()
     print("✅ Modèle prêt")
     
     print("\n📄 Chargement des données...")
     coords, feats, labels, lengths, layerIds = SVGDataset.load(json_path, idx=0)
-    
     print(f"   Primitives: {len(coords)}")
-    print(f"   Features: {feats.shape}")
-    print(f"   Layers: {len(np.unique(layerIds))}")
     
     coords = coords - np.mean(coords, axis=0)
     
@@ -104,63 +91,58 @@ def run_inference(json_path, config_path, checkpoint_path):
         result = model(batch, return_loss=False)
     print("✅ Inférence terminée")
     
-    semantic_labels = result['semantic_labels'].cpu().numpy()
+    # CORRECT: utiliser argmax sur semantic_scores pour les PRÉDICTIONS
+    sem_scores = result['semantic_scores']
+    sem_preds = torch.argmax(sem_scores, dim=1).cpu().numpy()
     instances = result['instances']
     
     print(f"\n{'='*60}")
     print(f"📊 RÉSULTATS")
     print(f"{'='*60}")
     
-    unique, counts = np.unique(semantic_labels, return_counts=True)
-    print(f"\n🏷️ Classes détectées:")
-    for c, cnt in sorted(zip(unique, counts), key=lambda x: -x[1]):
-        print(f"   {CLASSES.get(int(c), f'Class {c}'):20s}: {cnt:6d} ({100*cnt/len(semantic_labels):.1f}%)")
+    # Distribution des classes prédites
+    unique, counts = np.unique(sem_preds, return_counts=True)
+    print(f"\n🏷️ Classes prédites:")
+    for cls_id, cnt in sorted(zip(unique, counts), key=lambda x: -x[1]):
+        cls_name = CLASSES.get(cls_id, f"Class {cls_id}")
+        print(f"   {cls_name:20s}: {cnt:5d} ({100*cnt/len(sem_preds):5.1f}%)")
     
-    print(f"\n🎯 Instances: {len(instances)}")
-    if instances:
-        print(f"\n   Top 10:")
-        for i, inst in enumerate(sorted(instances, key=lambda x: -x['conf'])[:10]):
-            cls = CLASSES.get(inst['label_id'], '?')
-            print(f"   {i+1:2d}. {cls:20s} conf={inst['conf']:.3f} pts={int(inst['pred_mask'].sum())}")
+    print(f"\n🎯 Instances détectées: {len(instances)}")
     
-    return {
+    # Sauvegarder les résultats
+    output_path = json_path.replace('_s2.json', '_pred.json')
+    output = {
         'source_file': os.path.basename(json_path),
-        'num_primitives': len(semantic_labels),
-        'semantic_labels': semantic_labels.tolist(),
-        'class_distribution': {CLASSES.get(int(c), f"Class {c}"): int(cnt) for c, cnt in zip(unique, counts)},
-        'num_instances': len(instances),
-        'instances': [
-            {'class': CLASSES.get(inst['label_id'], '?'), 'label_id': int(inst['label_id']),
-             'confidence': float(inst['conf']), 'num_points': int(inst['pred_mask'].sum())}
-            for inst in instances
-        ]
+        'num_primitives': len(sem_preds),
+        'predictions': sem_preds.tolist(),
+        'class_distribution': {
+            CLASSES.get(int(c), f"Class {c}"): int(cnt) 
+            for c, cnt in zip(unique, counts)
+        },
+        'num_instances': len(instances)
     }
+    
+    with open(output_path, 'w') as f:
+        json.dump(output, f, indent=2)
+    print(f"\n💾 Résultats sauvegardés: {output_path}")
+    
+    return output
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python run_inference.py <fichier_s2.json> [output.json]")
+    import argparse
+    parser = argparse.ArgumentParser(description='SymPointV2 Inference')
+    parser.add_argument('json_file', help='Fichier JSON _s2.json')
+    parser.add_argument('--config', default='/workspace/SymPointV2/checkpoints/sympointv2/svg_pointT.yaml')
+    parser.add_argument('--checkpoint', default='/workspace/SymPointV2/checkpoints/sympointv2/best.pth')
+    
+    args = parser.parse_args()
+    
+    if not os.path.exists(args.json_file):
+        print(f"❌ Fichier non trouvé: {args.json_file}")
         sys.exit(1)
     
-    json_path = sys.argv[1]
-    output_path = sys.argv[2] if len(sys.argv) > 2 else json_path.replace('_s2.json', '_pred.json')
-    
-    config_path = '/workspace/SymPointV2/checkpoints/sympointv2/svg_pointT.yaml'
-    checkpoint_path = '/workspace/SymPointV2/checkpoints/sympointv2/best.pth'
-    
-    if not os.path.exists(config_path):
-        print(f"❌ Config non trouvée: {config_path}")
-        sys.exit(1)
-    if not os.path.exists(checkpoint_path):
-        print(f"❌ Checkpoint non trouvé: {checkpoint_path}")
-        sys.exit(1)
-    
-    result = run_inference(json_path, config_path, checkpoint_path)
-    
-    with open(output_path, 'w') as f:
-        json.dump(result, f, indent=2)
-    
-    print(f"\n✅ Résultats sauvegardés: {output_path}")
+    run_inference(args.json_file, args.config, args.checkpoint)
 
 
 if __name__ == '__main__':
