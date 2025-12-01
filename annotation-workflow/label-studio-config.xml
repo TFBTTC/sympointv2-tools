@@ -1,0 +1,43 @@
+<View>
+  <Header value="Plan d'Architecture - Annotation"/>
+  <Image name="image" value="$image" zoom="true" zoomControl="true"/>
+  
+  <PolygonLabels name="label" toName="image" strokeWidth="2" pointSize="small" opacity="0.6">
+    <!-- STRUCTURE - Priorité 1 -->
+    <Label value="Wall" background="#A66B20" hotkey="w"/>
+    <Label value="Single_Door" background="#E03E9B" hotkey="d"/>
+    <Label value="Double_Door" background="#9D2265"/>
+    <Label value="Sliding_Door" background="#E8745B"/>
+    <Label value="Window" background="#604EF5" hotkey="f"/>
+    <Label value="Bay_Window" background="#1A02DB"/>
+    
+    <!-- SANITAIRES -->
+    <Label value="Toilet" background="#EE7CA2" hotkey="t"/>
+    <Label value="Bath" background="#ACB770"/>
+    <Label value="Bathtub" background="#8D9853"/>
+    <Label value="Sink" background="#719752"/>
+    
+    <!-- CUISINE -->
+    <Label value="Gas_Stove" background="#9893C8"/>
+    <Label value="Refrigerator" background="#7067B2"/>
+    
+    <!-- MOBILIER -->
+    <Label value="Bed" background="#5E9671"/>
+    <Label value="Sofa" background="#7AB591"/>
+    <Label value="Table" background="#7BB572"/>
+    <Label value="Chair" background="#426B51"/>
+    
+    <!-- CIRCULATION -->
+    <Label value="Stairs" background="#F7CE4B" hotkey="s"/>
+    <Label value="Elevator" background="#ED702D"/>
+    
+    <!-- AUTRES -->
+    <Label value="Railing" background="#403469"/>
+    <Label value="Curtain_Wall" background="#7968B2"/>
+    
+    <!-- BACKGROUND - Très important -->
+    <Label value="Background" background="#333333" hotkey="b"/>
+  </PolygonLabels>
+  
+  <TextArea name="notes" toName="image" placeholder="Notes (optionnel)..." rows="2"/>
+</View>
